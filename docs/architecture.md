@@ -345,7 +345,7 @@ service commits change ──▶ RealtimeService.broadcast(eventId, changes)
 |---|---|---|
 | **Local** | Development | `docker compose up`: Postgres, Redis, Mailpit, MinIO, Stripe CLI (webhook forwarding) |
 | **CI** | Every PR | GitHub Actions; Testcontainers for Postgres and Redis |
-| **Staging** | Auto-deploy from `main` | Render/Railway: web (static), api, worker, managed Postgres, managed Redis; Stripe test mode |
+| **Staging** | Auto-deploy from `main` | Render, defined in `render.yaml` ([ADR-0013](adr/0013-hosting-on-render.md)): static site (web), web service (api), background worker, Render Postgres, Render Key Value; Stripe test mode |
 | **Production** | Manual promotion of a tagged release | Same shape as staging |
 
 **Pipeline:** lint → type-check → unit tests → integration tests → build Docker image → run migrations (`prisma migrate deploy`) → deploy API and worker → deploy web → smoke test `/health/ready`.
