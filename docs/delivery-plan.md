@@ -85,6 +85,7 @@ Every phase follows the same four steps.
 - [ ] `/api/docs` serving the runtime spec; `api-client` generated from `openapi.yaml`
 - [ ] React + Vite + Tailwind + Router + TanStack Query shell, with design tokens from [wireframes §6](wireframes.md#6-design-tokens)
 - [ ] GitHub Actions: lint → type-check → test → build → Docker image (`turbo prune`)
+- [ ] Decide on branching before development starts: stay with feature → `main`, or add `develop` (feature → `develop` → `main` at phase sign-off, with staging deploying from `develop`). Until then, everything goes to `main` through PRs.
 - [ ] `render.yaml` Blueprint and staging deploy of web, api and worker, with Render Postgres and Key Value ([ADR-0013](adr/0013-hosting-on-render.md)); check whether session affinity is available
 
 **Acceptance criteria**
