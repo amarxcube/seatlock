@@ -1,0 +1,7 @@
+pnpm-lock.yaml
+dist/
+coverage/
+.turbo/
+**/src/generated/
+packages/api-client/src/schema.d.ts
+docs/
