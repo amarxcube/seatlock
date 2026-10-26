@@ -1,0 +1,95 @@
+# Render Blueprint for staging (ADR-0013). Create it in the Render dashboard with
+# New → Blueprint → this repository. Values marked `sync: false` are asked for once, at creation.
+# Plan names and prices: https://render.com/pricing
+
+services:
+  # HTTP API and WebSocket gateway (apps/api, main.ts)
+  - type: web
+    name: seatlock-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: singapore
+    plan: 0.5c-512mb
+    healthCheckPath: /api/v1/health/ready
+    # Migrations run from the new image before it receives traffic (database.md §7).
+    preDeployCommand: node_modules/.bin/prisma migrate deploy
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: DATABASE_URL
+        fromDatabase:
+          name: seatlock-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: seatlock-redis
+          property: connectionString
+      # The static site's URL, e.g. https://seatlock-web.onrender.com (the only origin CORS allows).
+      - key: WEB_ORIGIN
+        sync: false
+
+  # Queue processors, and later the hold sweeper and outbox relay (apps/api, worker.ts)
+  - type: worker
+    name: seatlock-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: node dist/worker.js
+    region: singapore
+    plan: 0.5c-512mb
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: DATABASE_URL
+        fromDatabase:
+          name: seatlock-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: seatlock-redis
+          property: connectionString
+      # Not used by the worker, but required by the shared config schema.
+      - key: WEB_ORIGIN
+        sync: false
+
+  # React SPA (apps/web), served from Render's CDN
+  - type: web
+    name: seatlock-web
+    runtime: static
+    buildCommand: >-
+      npx --yes pnpm@10.34.9 install --frozen-lockfile --prod=false --filter @seatlock/web... &&
+      npx --yes pnpm@10.34.9 turbo run build --filter=@seatlock/web
+    staticPublishPath: ./apps/web/dist
+    autoDeployTrigger: commit
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # The API's URL plus /api/v1, e.g. https://seatlock-api.onrender.com/api/v1 (read at build time).
+      - key: VITE_API_URL
+        sync: false
+
+  # Redis-compatible store: Socket.IO fan-out, BullMQ queues, rate limits. Holds nothing that
+  # can't be lost in staging; production needs a plan with persistence (ADR-0013).
+  - type: keyvalue
+    name: seatlock-redis
+    region: singapore
+    plan: free
+    maxmemoryPolicy: noeviction # BullMQ requires keys never to be evicted
+    ipAllowList: [] # reachable only from services in this Render account
+
+databases:
+  - name: seatlock-db
+    region: singapore
+    plan: 0.1c-256mb
+    postgresMajorVersion: '16'
+    databaseName: seatlock
+    user: seatlock
