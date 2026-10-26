@@ -1,0 +1,1656 @@
+openapi: 3.1.0
+info:
+  title: SeatLock API
+  version: 1.0.0
+  summary: Event booking platform with assigned seating.
+  description: |
+    Contract for the SeatLock REST API. Conventions (errors, pagination, idempotency,
+    rate limits, caching) and the WebSocket contract are documented in `docs/api.md`.
+
+    Money is integer cents (USD). Timestamps are ISO-8601 UTC.
+    Required roles are listed per operation in `x-roles`.
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local
+  - url: https://api.staging.seatlock.dev/api/v1
+    description: Staging
+
+tags:
+  - name: Auth
+  - name: Me
+  - name: Events
+  - name: Holds
+  - name: Orders
+  - name: Tickets
+  - name: Organizer Venues
+  - name: Organizer Events
+  - name: Admin
+  - name: Webhooks
+  - name: Ops
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ───────────────────────────── Auth ─────────────────────────────
+  /auth/register:
+    post:
+      tags: [Auth]
+      operationId: register
+      summary: Create a customer account and sign in
+      security: []
+      x-roles: [public]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Registered and signed in. Sets the `sl_refresh` cookie.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SetRefreshCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Sign in with email and password
+      security: []
+      x-roles: [public]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Signed in. Sets the `sl_refresh` cookie.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SetRefreshCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refresh
+      summary: Rotate the refresh token and get a new access token
+      security:
+        - refreshCookie: []
+      x-roles: [public]
+      responses:
+        '200':
+          description: New access token. The refresh cookie is rotated.
+          headers:
+            Set-Cookie: { $ref: '#/components/headers/SetRefreshCookie' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke the current refresh-token family and clear the cookie
+      security:
+        - refreshCookie: []
+      x-roles: [public]
+      responses:
+        '204': { description: Signed out }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      operationId: forgotPassword
+      summary: Email a password-reset link
+      description: Always returns 202, whether or not the email exists, to prevent account enumeration.
+      security: []
+      x-roles: [public]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '202': { description: Accepted }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Set a new password using a reset token
+      description: Revokes all of the user's existing sessions.
+      security: []
+      x-roles: [public]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { $ref: '#/components/schemas/Password' }
+      responses:
+        '204': { description: Password changed }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  # ───────────────────────────── Me ─────────────────────────────
+  /me:
+    get:
+      tags: [Me]
+      operationId: getMe
+      summary: Current user profile
+      x-roles: [customer, organizer, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    patch:
+      tags: [Me]
+      operationId: updateMe
+      summary: Update profile
+      x-roles: [customer, organizer, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /me/orders:
+    get:
+      tags: [Me, Orders]
+      operationId: listMyOrders
+      summary: My orders, newest first
+      x-roles: [customer, organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Order' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /me/tickets:
+    get:
+      tags: [Me, Tickets]
+      operationId: listMyTickets
+      summary: My tickets
+      x-roles: [customer, organizer, admin]
+      parameters:
+        - name: when
+          in: query
+          schema: { type: string, enum: [upcoming, past], default: upcoming }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Ticket' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  # ───────────────────────────── Events (public) ─────────────────────────────
+  /events:
+    get:
+      tags: [Events]
+      operationId: listEvents
+      summary: Browse published, upcoming events
+      security: []
+      x-roles: [public]
+      parameters:
+        - name: q
+          in: query
+          description: Full-text search on title and description
+          schema: { type: string, maxLength: 100 }
+        - name: city
+          in: query
+          schema: { type: string }
+        - name: category
+          in: query
+          schema: { $ref: '#/components/schemas/EventCategory' }
+        - name: from
+          in: query
+          description: Local venue date (inclusive)
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          description: Local venue date (inclusive)
+          schema: { type: string, format: date }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/CursorPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/EventSummary' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+
+  /events/{eventId}:
+    get:
+      tags: [Events]
+      operationId: getEvent
+      summary: Event detail
+      security: []
+      x-roles: [public]
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /events/{eventId}/seat-map:
+    get:
+      tags: [Events]
+      operationId: getSeatMap
+      summary: Static seat layout with prices (cacheable)
+      description: Immutable once the event is published. Supports `If-None-Match`.
+      security: []
+      x-roles: [public]
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: OK
+          headers:
+            ETag: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeatMap' }
+        '304': { description: Not modified }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /events/{eventId}/seats:
+    get:
+      tags: [Events]
+      operationId: getSeatStatuses
+      summary: Live seat statuses (compact snapshot)
+      security: []
+      x-roles: [public]
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeatStatusSnapshot' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────────── Holds ─────────────────────────────
+  /events/{eventId}/holds:
+    post:
+      tags: [Holds]
+      operationId: createHold
+      summary: Hold 1–10 seats (all-or-nothing); replaces the caller's previous hold for this event
+      x-roles: [customer, organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateHoldRequest' }
+      responses:
+        '201':
+          description: Seats held
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hold' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: '`SEATS_UNAVAILABLE` (with `conflicts`) or `EVENT_NOT_ON_SALE`'
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/SeatConflictProblem' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /holds/{holdId}:
+    parameters:
+      - $ref: '#/components/parameters/HoldId'
+    get:
+      tags: [Holds]
+      operationId: getHold
+      summary: Get one of my holds
+      x-roles: [customer, organizer, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Hold' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Holds]
+      operationId: releaseHold
+      summary: Release my hold and free its seats
+      x-roles: [customer, organizer, admin]
+      responses:
+        '204': { description: Released (or already inactive) }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /holds/{holdId}/checkout:
+    post:
+      tags: [Holds, Orders]
+      operationId: checkoutHold
+      summary: Create (or return) the pending order and Stripe PaymentIntent for a hold
+      x-roles: [customer, organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/HoldId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Order created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutResponse' }
+        '200':
+          description: Existing pending order returned (idempotent replay)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutResponse' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ───────────────────────────── Orders & tickets ─────────────────────────────
+  /orders/{orderId}:
+    get:
+      tags: [Orders]
+      operationId: getOrder
+      summary: Get one of my orders (the confirmation page polls this)
+      x-roles: [customer, organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /tickets/{ticketId}:
+    get:
+      tags: [Tickets]
+      operationId: getTicket
+      summary: Get one of my tickets, including its QR payload
+      x-roles: [customer, organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TicketDetail' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /tickets/{ticketId}/pdf:
+    get:
+      tags: [Tickets]
+      operationId: getTicketPdf
+      summary: Download a ticket as a PDF
+      x-roles: [customer, organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+      responses:
+        '200':
+          description: PDF file
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────────── Organizer: venues ─────────────────────────────
+  /organizer/venues:
+    get:
+      tags: [Organizer Venues]
+      operationId: listMyVenues
+      summary: Venues I own
+      x-roles: [organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Q'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OffsetPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Venue' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Organizer Venues]
+      operationId: createVenue
+      summary: Create a venue (empty layout)
+      x-roles: [organizer, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VenueInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Venue' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /organizer/venues/{venueId}:
+    parameters:
+      - $ref: '#/components/parameters/VenueId'
+    get:
+      tags: [Organizer Venues]
+      operationId: getMyVenue
+      summary: Venue with its full layout
+      x-roles: [organizer, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VenueWithLayout' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Organizer Venues]
+      operationId: updateVenue
+      summary: Update venue details (not the layout)
+      x-roles: [organizer, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VenueInputPartial' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Venue' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Organizer Venues]
+      operationId: deleteVenue
+      summary: Delete a venue that has no events
+      x-roles: [organizer, admin]
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /organizer/venues/{venueId}/layout:
+    put:
+      tags: [Organizer Venues]
+      operationId: replaceVenueLayout
+      summary: Replace the whole layout (sections + seats) atomically
+      description: Rejected with `LAYOUT_LOCKED` once any event at this venue has been published.
+      x-roles: [organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/VenueId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LayoutInput' }
+      responses:
+        '200':
+          description: Layout saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VenueWithLayout' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /organizer/uploads/cover-image:
+    post:
+      tags: [Organizer Events]
+      operationId: createCoverImageUpload
+      summary: Get a presigned URL to upload an event cover image
+      x-roles: [organizer, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contentType, sizeBytes]
+              properties:
+                contentType: { type: string, enum: [image/jpeg, image/png, image/webp] }
+                sizeBytes: { type: integer, minimum: 1, maximum: 5242880 }
+      responses:
+        '201':
+          description: Upload URL issued (valid for 5 minutes)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [uploadUrl, key, expiresAt]
+                properties:
+                  uploadUrl: { type: string, format: uri }
+                  key: { type: string, description: Pass as `coverImageKey` when saving the event }
+                  expiresAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  # ───────────────────────────── Organizer: events ─────────────────────────────
+  /organizer/events:
+    get:
+      tags: [Organizer Events]
+      operationId: listMyEvents
+      summary: Events I organize
+      x-roles: [organizer, admin]
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/EventStatus' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Q'
+        - name: sort
+          in: query
+          schema: { type: string, enum: [startsAt, -startsAt, createdAt, -createdAt], default: -startsAt }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OffsetPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/OrganizerEvent' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Organizer Events]
+      operationId: createEvent
+      summary: Create a draft event
+      x-roles: [organizer, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventInput' }
+      responses:
+        '201':
+          description: Created (status `draft`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizerEvent' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /organizer/events/{eventId}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Organizer Events]
+      operationId: getMyEvent
+      summary: Event (any status) with price tiers
+      x-roles: [organizer, admin]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizerEvent' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Organizer Events]
+      operationId: updateEvent
+      summary: Update an event
+      description: |
+        Drafts: every field is editable. Published events: only `title`, `description`,
+        `coverImageKey` and `category`. Venue, times and prices are fixed once on sale.
+      x-roles: [organizer, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventInputPartial' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizerEvent' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Organizer Events]
+      operationId: deleteDraftEvent
+      summary: Delete a draft event
+      x-roles: [organizer, admin]
+      responses:
+        '204': { description: Deleted }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /organizer/events/{eventId}/publish:
+    post:
+      tags: [Organizer Events]
+      operationId: publishEvent
+      summary: Publish a draft; generates seat inventory and locks the venue layout
+      x-roles: [organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizerEvent' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /organizer/events/{eventId}/cancel:
+    post:
+      tags: [Organizer Events]
+      operationId: cancelEvent
+      summary: Cancel a published event; refunds all paid orders and notifies ticket holders
+      x-roles: [organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelEventRequest' }
+      responses:
+        '200':
+          description: Cancelled; refunds are queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizerEvent' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /organizer/events/{eventId}/seats/block:
+    post:
+      tags: [Organizer Events]
+      operationId: blockSeats
+      summary: Block available seats so they can't be sold
+      x-roles: [organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SeatIdsRequest' }
+      responses:
+        '200':
+          description: Blocked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeatChangeResult' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Some seats are held or sold (`SEATS_UNAVAILABLE`)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/SeatConflictProblem' }
+
+  /organizer/events/{eventId}/seats/unblock:
+    post:
+      tags: [Organizer Events]
+      operationId: unblockSeats
+      summary: Return blocked seats to sale
+      x-roles: [organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SeatIdsRequest' }
+      responses:
+        '200':
+          description: Unblocked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeatChangeResult' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /organizer/events/{eventId}/stats:
+    get:
+      tags: [Organizer Events]
+      operationId: getEventStats
+      summary: Live sales figures
+      x-roles: [organizer, admin]
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventStats' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────────── Admin ─────────────────────────────
+  /admin/users:
+    get:
+      tags: [Admin]
+      operationId: adminListUsers
+      summary: Search users
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - name: role
+          in: query
+          schema: { $ref: '#/components/schemas/UserRole' }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/UserStatus' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: sort
+          in: query
+          schema: { type: string, enum: [createdAt, -createdAt, email, -email], default: -createdAt }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OffsetPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users/{userId}:
+    patch:
+      tags: [Admin]
+      operationId: adminUpdateUser
+      summary: Change a user's role or status (disabling revokes all sessions)
+      x-roles: [admin]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                role: { $ref: '#/components/schemas/UserRole' }
+                status: { $ref: '#/components/schemas/UserStatus' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/events:
+    get:
+      tags: [Admin]
+      operationId: adminListEvents
+      summary: Search all events
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/EventStatus' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OffsetPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/OrganizerEvent' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/events/{eventId}/cancel:
+    post:
+      tags: [Admin]
+      operationId: adminCancelEvent
+      summary: Take an event down (PRD story A2); same effects as an organizer cancel
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/EventId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelEventRequest' }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizerEvent' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/orders:
+    get:
+      tags: [Admin]
+      operationId: adminListOrders
+      summary: Search all orders
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Q'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OrderStatus' }
+        - name: eventId
+          in: query
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/OffsetPage'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Order' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # ───────────────────────────── Webhooks ─────────────────────────────
+  /webhooks/stripe:
+    post:
+      tags: [Webhooks]
+      operationId: stripeWebhook
+      summary: Stripe event receiver
+      description: |
+        Verifies `Stripe-Signature` against the raw body. Handles `payment_intent.succeeded`,
+        `payment_intent.payment_failed`, `payment_intent.canceled` and `charge.refunded`.
+        Duplicate event IDs are acknowledged without reprocessing.
+      security:
+        - stripeSignature: []
+      x-roles: [stripe]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200': { description: Acknowledged }
+        '400': { description: Invalid signature or payload }
+
+  # ───────────────────────────── Ops ─────────────────────────────
+  /health/live:
+    get:
+      tags: [Ops]
+      operationId: liveness
+      summary: Process is up
+      security: []
+      x-roles: [public]
+      responses:
+        '200': { description: OK }
+
+  /health/ready:
+    get:
+      tags: [Ops]
+      operationId: readiness
+      summary: Ready to serve (Postgres reachable); Redis reported but not required
+      security: []
+      x-roles: [public]
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: Not ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: sl_refresh
+    stripeSignature:
+      type: apiKey
+      in: header
+      name: Stripe-Signature
+
+  headers:
+    SetRefreshCookie:
+      description: '`sl_refresh=<token>; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth; Max-Age=604800`'
+      schema: { type: string }
+
+  parameters:
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    HoldId:
+      name: holdId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    VenueId:
+      name: venueId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor from a previous response's `nextCursor`
+      schema: { type: string }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    Q:
+      name: q
+      in: query
+      description: Free-text search
+      schema: { type: string, maxLength: 100 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: One UUID per checkout attempt; reuse it on network retries
+      schema: { type: string, format: uuid }
+
+  responses:
+    ValidationFailed:
+      description: '`VALIDATION_FAILED`'
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/ValidationProblem' }
+    Unauthenticated:
+      description: '`UNAUTHENTICATED`, `TOKEN_EXPIRED`, `INVALID_CREDENTIALS` or `REFRESH_INVALID`'
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: '`FORBIDDEN` or `ACCOUNT_DISABLED`'
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: '`NOT_FOUND`'
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: A 409 code from the error catalog in `docs/api.md`
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unprocessable:
+      description: '`UNKNOWN_SEATS` or `EVENT_NOT_PUBLISHABLE`'
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    RateLimited:
+      description: '`RATE_LIMITED`'
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ServiceUnavailable:
+      description: '`SERVICE_UNAVAILABLE` (for example, Stripe is unreachable)'
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    # ── Enums ──
+    UserRole: { type: string, enum: [customer, organizer, admin] }
+    UserStatus: { type: string, enum: [active, disabled] }
+    EventStatus: { type: string, enum: [draft, published, cancelled, completed] }
+    EventCategory: { type: string, enum: [concert, movie, theatre, comedy, sports, conference, other] }
+    SeatStatus: { type: string, enum: [available, held, sold, blocked] }
+    HoldStatus: { type: string, enum: [active, released, expired, converted] }
+    OrderStatus: { type: string, enum: [pending, paid, failed, expired, failed_conflict, refunded] }
+    TicketStatus: { type: string, enum: [valid, used, cancelled] }
+
+    # ── Errors ──
+    Problem:
+      type: object
+      required: [type, title, status, code, requestId]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string, examples: [NOT_FOUND] }
+        detail: { type: string }
+        instance: { type: string }
+        requestId: { type: string }
+    ValidationProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          required: [errors]
+          properties:
+            errors:
+              type: array
+              items:
+                type: object
+                required: [path, message]
+                properties:
+                  path: { type: string, examples: [seatIds.3] }
+                  message: { type: string }
+    SeatConflictProblem:
+      allOf:
+        - $ref: '#/components/schemas/Problem'
+        - type: object
+          properties:
+            conflicts:
+              type: array
+              description: Seat IDs that could not be taken (present when `code` is `SEATS_UNAVAILABLE`)
+              items: { type: string, format: uuid }
+
+    # ── Pagination ──
+    CursorPage:
+      type: object
+      required: [data, nextCursor]
+      properties:
+        data: { type: array, items: {} }
+        nextCursor: { type: [string, 'null'] }
+    OffsetPage:
+      type: object
+      required: [data, page, pageSize, total]
+      properties:
+        data: { type: array, items: {} }
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+
+    # ── Auth & users ──
+    Password:
+      type: string
+      minLength: 10
+      maxLength: 128
+      description: At least 10 characters; checked against a common-password list
+    RegisterRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        password: { $ref: '#/components/schemas/Password' }
+        name: { type: string, minLength: 1, maxLength: 100 }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+    AuthResponse:
+      type: object
+      required: [accessToken, expiresIn, user]
+      properties:
+        accessToken: { type: string }
+        expiresIn: { type: integer, description: Seconds until the access token expires, examples: [900] }
+        user: { $ref: '#/components/schemas/User' }
+    User:
+      type: object
+      required: [id, email, name, role, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { $ref: '#/components/schemas/UserRole' }
+        status: { $ref: '#/components/schemas/UserStatus' }
+        createdAt: { type: string, format: date-time }
+
+    # ── Venues ──
+    VenueInput:
+      type: object
+      required: [name, addressLine, city, countryCode, timezone]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        addressLine: { type: string, minLength: 1, maxLength: 200 }
+        city: { type: string, minLength: 1, maxLength: 100 }
+        countryCode: { type: string, pattern: '^[A-Z]{2}$' }
+        timezone: { type: string, description: IANA time zone, examples: [America/New_York] }
+    VenueInputPartial:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        addressLine: { type: string, minLength: 1, maxLength: 200 }
+        city: { type: string, minLength: 1, maxLength: 100 }
+        countryCode: { type: string, pattern: '^[A-Z]{2}$' }
+        timezone: { type: string }
+    Venue:
+      allOf:
+        - $ref: '#/components/schemas/VenueInput'
+        - type: object
+          required: [id, layoutLocked, seatCount, createdAt]
+          properties:
+            id: { type: string, format: uuid }
+            layoutLocked: { type: boolean }
+            seatCount: { type: integer }
+            createdAt: { type: string, format: date-time }
+    Section:
+      type: object
+      required: [id, name, color, sortOrder]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        sortOrder: { type: integer }
+    Seat:
+      type: object
+      required: [id, sectionId, rowLabel, seatNumber, label, x, y, isAccessible]
+      properties:
+        id: { type: string, format: uuid }
+        sectionId: { type: string, format: uuid }
+        rowLabel: { type: string, maxLength: 4 }
+        seatNumber: { type: integer, minimum: 1 }
+        label: { type: string, examples: [B-12] }
+        x: { type: integer, minimum: 0 }
+        y: { type: integer, minimum: 0 }
+        isAccessible: { type: boolean }
+    VenueWithLayout:
+      allOf:
+        - $ref: '#/components/schemas/Venue'
+        - type: object
+          required: [sections, seats]
+          properties:
+            sections:
+              type: array
+              items: { $ref: '#/components/schemas/Section' }
+            seats:
+              type: array
+              items: { $ref: '#/components/schemas/Seat' }
+    LayoutInput:
+      type: object
+      required: [sections]
+      description: The full layout. Seat IDs are server-assigned; existing layout is replaced.
+      properties:
+        sections:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            required: [name, color, seats]
+            properties:
+              name: { type: string, minLength: 1, maxLength: 50 }
+              color: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+              seats:
+                type: array
+                minItems: 1
+                maxItems: 2000
+                items:
+                  type: object
+                  required: [rowLabel, seatNumber, x, y]
+                  properties:
+                    rowLabel: { type: string, minLength: 1, maxLength: 4 }
+                    seatNumber: { type: integer, minimum: 1 }
+                    x: { type: integer, minimum: 0, maximum: 500 }
+                    y: { type: integer, minimum: 0, maximum: 500 }
+                    isAccessible: { type: boolean, default: false }
+
+    # ── Events ──
+    VenueRef:
+      type: object
+      required: [id, name, city, timezone]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        city: { type: string }
+        addressLine: { type: string }
+        timezone: { type: string }
+    EventSummary:
+      type: object
+      required: [id, title, category, startsAt, endsAt, venue, coverImageUrl, minPriceCents, availableSeats]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        category: { $ref: '#/components/schemas/EventCategory' }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        venue: { $ref: '#/components/schemas/VenueRef' }
+        coverImageUrl: { type: [string, 'null'], format: uri }
+        minPriceCents: { type: integer }
+        availableSeats: { type: integer, description: Approximate; refreshed every 30 s }
+    PriceTier:
+      type: object
+      required: [sectionId, sectionName, priceCents]
+      properties:
+        sectionId: { type: string, format: uuid }
+        sectionName: { type: string }
+        priceCents: { type: integer, minimum: 0 }
+    EventDetail:
+      allOf:
+        - $ref: '#/components/schemas/EventSummary'
+        - type: object
+          required: [description, status, priceTiers]
+          properties:
+            description: { type: string }
+            status: { $ref: '#/components/schemas/EventStatus' }
+            priceTiers:
+              type: array
+              items: { $ref: '#/components/schemas/PriceTier' }
+    EventInput:
+      type: object
+      required: [venueId, title, category, startsAt, endsAt, priceTiers]
+      properties:
+        venueId: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 150 }
+        description: { type: string, maxLength: 5000, default: '' }
+        category: { $ref: '#/components/schemas/EventCategory' }
+        coverImageKey: { type: [string, 'null'] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        priceTiers:
+          type: array
+          items:
+            type: object
+            required: [sectionId, priceCents]
+            properties:
+              sectionId: { type: string, format: uuid }
+              priceCents: { type: integer, minimum: 0, maximum: 1000000 }
+    EventInputPartial:
+      type: object
+      minProperties: 1
+      properties:
+        venueId: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 150 }
+        description: { type: string, maxLength: 5000 }
+        category: { $ref: '#/components/schemas/EventCategory' }
+        coverImageKey: { type: [string, 'null'] }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        priceTiers:
+          type: array
+          items:
+            type: object
+            required: [sectionId, priceCents]
+            properties:
+              sectionId: { type: string, format: uuid }
+              priceCents: { type: integer, minimum: 0, maximum: 1000000 }
+    OrganizerEvent:
+      allOf:
+        - $ref: '#/components/schemas/EventDetail'
+        - type: object
+          required: [publishedAt, cancelledAt, createdAt, updatedAt]
+          properties:
+            publishedAt: { type: [string, 'null'], format: date-time }
+            cancelledAt: { type: [string, 'null'], format: date-time }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    CancelEventRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 500, description: Included in the email to ticket holders }
+    EventStats:
+      type: object
+      required: [eventId, totalSeats, available, held, sold, blocked, revenueCents, ordersPaid, ordersPending, checkoutConversion]
+      properties:
+        eventId: { type: string, format: uuid }
+        totalSeats: { type: integer }
+        available: { type: integer }
+        held: { type: integer }
+        sold: { type: integer }
+        blocked: { type: integer }
+        revenueCents: { type: integer }
+        ordersPaid: { type: integer }
+        ordersPending: { type: integer }
+        checkoutConversion: { type: number, minimum: 0, maximum: 1, description: Paid orders ÷ checkouts started }
+        bySection:
+          type: array
+          items:
+            type: object
+            required: [sectionId, sectionName, sold, total, revenueCents]
+            properties:
+              sectionId: { type: string, format: uuid }
+              sectionName: { type: string }
+              sold: { type: integer }
+              total: { type: integer }
+              revenueCents: { type: integer }
+
+    # ── Seat map ──
+    SeatMap:
+      type: object
+      required: [eventId, venue, width, height, sections, seats]
+      properties:
+        eventId: { type: string, format: uuid }
+        venue: { $ref: '#/components/schemas/VenueRef' }
+        width: { type: integer, description: Grid width in units }
+        height: { type: integer, description: Grid height in units }
+        stage:
+          type: object
+          description: Optional stage/screen rectangle for rendering
+          properties:
+            x: { type: integer }
+            y: { type: integer }
+            width: { type: integer }
+            height: { type: integer }
+            label: { type: string, examples: [STAGE] }
+        sections:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Section'
+              - type: object
+                required: [priceCents]
+                properties:
+                  priceCents: { type: integer }
+        seats:
+          type: array
+          items: { $ref: '#/components/schemas/Seat' }
+    SeatStatusSnapshot:
+      type: object
+      required: [eventId, generatedAt, seats]
+      properties:
+        eventId: { type: string, format: uuid }
+        generatedAt: { type: string, format: date-time }
+        seats:
+          type: array
+          description: Compact tuples of `[seatId, status, version]`
+          items:
+            type: array
+            prefixItems:
+              - { type: string, format: uuid }
+              - { $ref: '#/components/schemas/SeatStatus' }
+              - { type: integer, minimum: 0 }
+            minItems: 3
+            maxItems: 3
+
+    # ── Holds ──
+    CreateHoldRequest:
+      type: object
+      required: [seatIds]
+      properties:
+        seatIds:
+          type: array
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          items: { type: string, format: uuid }
+    HoldSeat:
+      type: object
+      required: [seatId, label, sectionName, priceCents]
+      properties:
+        seatId: { type: string, format: uuid }
+        label: { type: string }
+        sectionName: { type: string }
+        priceCents: { type: integer }
+    Hold:
+      type: object
+      required: [id, eventId, status, expiresAt, serverTime, seats, totalCents]
+      properties:
+        id: { type: string, format: uuid }
+        eventId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/HoldStatus' }
+        expiresAt: { type: string, format: date-time }
+        serverTime: { type: string, format: date-time, description: Lets the client correct for clock skew in the countdown }
+        seats:
+          type: array
+          items: { $ref: '#/components/schemas/HoldSeat' }
+        totalCents: { type: integer }
+
+    # ── Orders & tickets ──
+    CheckoutResponse:
+      type: object
+      required: [order, stripeClientSecret, stripePublishableKey]
+      properties:
+        order: { $ref: '#/components/schemas/Order' }
+        stripeClientSecret: { type: string }
+        stripePublishableKey: { type: string }
+    OrderItem:
+      type: object
+      required: [id, eventSeatId, seatLabel, sectionName, priceCents]
+      properties:
+        id: { type: string, format: uuid }
+        eventSeatId: { type: string, format: uuid }
+        seatLabel: { type: string }
+        sectionName: { type: string }
+        priceCents: { type: integer }
+    Order:
+      type: object
+      required: [id, eventId, holdId, status, totalCents, items, createdAt, paidAt]
+      properties:
+        id: { type: string, format: uuid }
+        eventId: { type: string, format: uuid }
+        event:
+          type: object
+          properties:
+            title: { type: string }
+            startsAt: { type: string, format: date-time }
+            venue: { $ref: '#/components/schemas/VenueRef' }
+        holdId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        totalCents: { type: integer }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        ticketIds:
+          type: array
+          description: Present once the order is `paid`
+          items: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        paidAt: { type: [string, 'null'], format: date-time }
+    Ticket:
+      type: object
+      required: [id, code, status, orderId, seatLabel, sectionName, event]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, examples: [SL-7KQ2-9XPA] }
+        status: { $ref: '#/components/schemas/TicketStatus' }
+        orderId: { type: string, format: uuid }
+        seatLabel: { type: string }
+        sectionName: { type: string }
+        event:
+          type: object
+          required: [id, title, startsAt, venue]
+          properties:
+            id: { type: string, format: uuid }
+            title: { type: string }
+            startsAt: { type: string, format: date-time }
+            venue: { $ref: '#/components/schemas/VenueRef' }
+    TicketDetail:
+      allOf:
+        - $ref: '#/components/schemas/Ticket'
+        - type: object
+          required: [qrPayload]
+          properties:
+            qrPayload: { type: string, description: '`ticketId.HMAC` — render as a QR code client-side' }
+
+    # ── Organizer seat changes ──
+    SeatIdsRequest:
+      type: object
+      required: [seatIds]
+      properties:
+        seatIds:
+          type: array
+          minItems: 1
+          maxItems: 500
+          uniqueItems: true
+          items: { type: string, format: uuid }
+    SeatChangeResult:
+      type: object
+      required: [changed]
+      properties:
+        changed:
+          type: array
+          items:
+            type: object
+            required: [seatId, status, version]
+            properties:
+              seatId: { type: string, format: uuid }
+              status: { $ref: '#/components/schemas/SeatStatus' }
+              version: { type: integer }
+
+    # ── Ops ──
+    Health:
+      type: object
+      required: [status, checks]
+      properties:
+        status: { type: string, enum: [ok, degraded, down] }
+        checks:
+          type: object
+          properties:
+            postgres: { type: string, enum: [up, down] }
+            redis: { type: string, enum: [up, down] }
