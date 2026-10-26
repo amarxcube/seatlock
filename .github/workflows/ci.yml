@@ -29,22 +29,28 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # `!cancelled()`: later checks still run after an earlier one fails, so one run reports
+      # every problem. The job still fails if any step failed.
       - name: Formatting
+        if: ${{ !cancelled() }}
         run: pnpm format:check
 
       - name: Generated API client matches openapi.yaml
+        if: ${{ !cancelled() }}
         run: |
           pnpm --filter @seatlock/api-client generate
           git diff --exit-code -- packages/api-client/src/schema.d.ts \
             || { echo "::error::Run 'pnpm generate' and commit packages/api-client/src/schema.d.ts"; exit 1; }
 
       - name: Lint, type-check, unit tests, build
-        run: pnpm turbo run lint typecheck test build
+        if: ${{ !cancelled() }}
+        run: pnpm turbo run lint typecheck test build --continue
 
       # Real Postgres 16 and Redis 7 via Testcontainers. Applies every migration to a fresh
       # database and validates responses against openapi.yaml (ADR-0014).
       - name: Integration and contract tests
-        run: pnpm turbo run test:integration
+        if: ${{ !cancelled() }}
+        run: pnpm turbo run test:integration --continue
 
   docker:
     name: Docker image
