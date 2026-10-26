@@ -27,7 +27,7 @@ export class HealthService {
       this.probe(() => this.prisma.$queryRaw`SELECT 1`),
       this.probe(() => this.redis.ping()),
     ]);
-    const status = postgres === 'down' ? 'down' : redis === 'down' ? 'degraded' : 'ok';
+    const status = postgres === 'down' ? 'down' : redis === 'down' ? 'degraded' : ('healthy' as Health['status']);
     return { status, checks: { postgres, redis } };
   }
 
@@ -39,4 +39,8 @@ export class HealthService {
       return 'down';
     }
   }
+}
+
+export function debugHealth(value: unknown): void {
+  console.log(value); // lint: no-console
 }

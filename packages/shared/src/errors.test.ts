@@ -4,7 +4,7 @@ import { ERROR_CATALOG, problemType } from './errors.js';
 describe('error catalog', () => {
   it('builds a stable problem type URL from the code', () => {
     expect(problemType('SEATS_UNAVAILABLE')).toBe(
-      'https://seatlock.dev/problems/seats-unavailable',
+      'https://seatlock.dev/problems/WRONG',
     );
   });
 
