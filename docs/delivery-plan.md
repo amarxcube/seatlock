@@ -66,7 +66,8 @@ Every phase follows the same four steps.
 
 - [x] Initialise git in the project root and create the GitHub repository ([amarxcube/seatlock](https://github.com/amarxcube/seatlock), initial commit `df209f2`)
 - [x] Branch protection on `main`: PR required (applies to admins too), no force pushes or deletion, conversations must be resolved. *Required CI status checks are added in Phase 0 once the pipeline exists.*
-- [ ] Choose the staging host (Render, Railway or Fly.io) and create the account
+- [x] Choose the staging host: **Render** ([ADR-0013](adr/0013-hosting-on-render.md))
+- [ ] Create the Render account and connect it to the GitHub repo (owner)
 - [ ] Create a Stripe test-mode account; install the Stripe CLI
 - [x] Add `CLAUDE.md` with project conventions taken from the ADRs: `_cents` money, UTC times, raw SQL only in the `holds`/`inventory`/`payments` repositories, problem+json errors, zod in `packages/shared`
 
@@ -84,7 +85,7 @@ Every phase follows the same four steps.
 - [ ] `/api/docs` serving the runtime spec; `api-client` generated from `openapi.yaml`
 - [ ] React + Vite + Tailwind + Router + TanStack Query shell, with design tokens from [wireframes §6](wireframes.md#6-design-tokens)
 - [ ] GitHub Actions: lint → type-check → test → build → Docker image (`turbo prune`)
-- [ ] Staging deploy of web, api and worker, with managed Postgres and Redis
+- [ ] `render.yaml` Blueprint and staging deploy of web, api and worker, with Render Postgres and Key Value ([ADR-0013](adr/0013-hosting-on-render.md)); check whether session affinity is available
 
 **Acceptance criteria**
 - [ ] A fresh clone runs with `pnpm i && docker compose up && pnpm dev` and nothing else
@@ -288,6 +289,7 @@ Record changes to scope, order or acceptance criteria made after this plan was a
 | Date | Phase | Change | Reason | Approved by |
 |---|---|---|---|---|
 | 2026-10-26 | All | Plan created | — | Amarnath Vadla |
+| 2026-10-26 | P, 0 | Staging and production host set to Render | Owner's choice; recorded in ADR-0013 | Amarnath Vadla |
 
 ---
 

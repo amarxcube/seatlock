@@ -10,7 +10,7 @@ Suggested reading order for someone new to the project: PRD → architecture →
 | [api.md](api.md) | Approved | API conventions, error catalog, pagination, idempotency, rate limits, caching, WebSocket contract |
 | [api/openapi.yaml](api/openapi.yaml) | Approved | OpenAPI 3.1 contract: the source of truth for every endpoint and payload |
 | [wireframes.md](wireframes.md) | Approved | Low-fidelity screens, user flows, unhappy paths, design tokens |
-| [adr/](adr/) | 12 accepted | Architecture Decision Records |
+| [adr/](adr/) | 13 accepted | Architecture Decision Records |
 | [delivery-plan.md](delivery-plan.md) | Active | Phased build plan with status board, acceptance criteria per phase, review gates and templates |
 
 ## Changes to the PRD made during design
@@ -22,3 +22,4 @@ Suggested reading order for someone new to the project: PRD → architecture →
 | `/ws/events/:id` becomes one Socket.IO connection with per-event rooms | [ADR-0006](adr/0006-realtime-socketio-redis-adapter.md) |
 | Admin "unpublish" is implemented as cancel-with-refunds | [api.md §9](api.md#9-endpoint-overview) |
 | Added `order_items` price snapshots, `outbox`, `audit_log`, venue `timezone`, user `status` | [database.md](database.md) |
+| Hosting narrowed from "Render/Railway/Fly.io" to Render | [ADR-0013](adr/0013-hosting-on-render.md) |

@@ -18,3 +18,4 @@ Copy [0000-template.md](0000-template.md) to start a new one. Number sequentiall
 | [0010](0010-api-design-first-openapi.md) | Design-first API with a committed OpenAPI contract | Accepted |
 | [0011](0011-shared-validation-zod.md) | zod schemas shared between frontend and backend | Accepted |
 | [0012](0012-money-and-time-conventions.md) | Integer cents for money; UTC plus venue time zone for time | Accepted |
+| [0013](0013-hosting-on-render.md) | Host staging and production on Render, defined as a Blueprint | Accepted |
