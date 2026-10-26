@@ -1,0 +1,47 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens from docs/wireframes.md §6. Seat states differ by shape as well as colour
+ * (WCAG 1.4.1); the shapes are drawn by the seat-map component in Phase 2.
+ * Usage: bg-seat-available, text-timer-danger, …
+ */
+@theme {
+  --color-seat-available: #2563eb;
+  --color-seat-selected: #2563eb;
+  --color-seat-held: #f59e0b;
+  --color-seat-sold: #9ca3af;
+  --color-seat-blocked: #d1d5db;
+
+  --color-timer-ok: #15803d;
+  --color-timer-warn: #b45309;
+  --color-timer-danger: #b91c1c;
+
+  --color-surface: #ffffff;
+  --color-surface-muted: #f3f4f6;
+  --color-ink: #111827;
+  --color-ink-muted: #4b5563;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-seat-available: #60a5fa;
+    --color-seat-selected: #3b82f6;
+    --color-seat-held: #fbbf24;
+    --color-seat-sold: #4b5563;
+    --color-seat-blocked: #374151;
+
+    --color-timer-ok: #4ade80;
+    --color-timer-warn: #fbbf24;
+    --color-timer-danger: #f87171;
+
+    --color-surface: #111827;
+    --color-surface-muted: #1f2937;
+    --color-ink: #f9fafb;
+    --color-ink-muted: #d1d5db;
+  }
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+}
