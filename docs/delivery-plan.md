@@ -19,8 +19,8 @@ This plan splits the build into phases. Each phase starts with a plan you approv
 
 | Phase | Name | PRD | Status | Plan approved | Review signed off | Tag |
 |---|---|---|---|---|---|---|
-| P | Prerequisites | — | In progress | — | — | — |
-| 0 | Foundation and walking skeleton | M0 | Not started | | | `phase-0` |
+| P | Prerequisites | — | Done | — | 2026-10-26 | — |
+| 0 | Foundation and walking skeleton | M0 | Planning | | | `phase-0` |
 | 1 | Auth and users | M1 | Not started | | | `phase-1` |
 | 2 | Venues, events, inventory | M2 (API), M3 | Not started | | | `phase-2` |
 | 3a | Holds: backend and concurrency | M4 | Not started | | | `phase-3a` |
@@ -67,8 +67,9 @@ Every phase follows the same four steps.
 - [x] Initialise git in the project root and create the GitHub repository ([amarxcube/seatlock](https://github.com/amarxcube/seatlock), initial commit `df209f2`)
 - [x] Branch protection on `main`: PR required (applies to admins too), no force pushes or deletion, conversations must be resolved. *Required CI status checks are added in Phase 0 once the pipeline exists.*
 - [x] Choose the staging host: **Render** ([ADR-0013](adr/0013-hosting-on-render.md))
-- [ ] Create the Render account and connect it to the GitHub repo (owner)
-- [ ] Create a Stripe test-mode account; install the Stripe CLI
+- [x] Create the Render account and connect it to the GitHub repo (owner; Render GitHub app limited to this repo)
+- [x] Create a Stripe test-mode account; install the Stripe CLI (sandbox account; CLI 1.55.1 logged in; `stripe listen` needs an explicit `--events` list)
+- [x] Local toolchain: Node 24 and pnpm 10 (via Volta); **Podman** as the container engine (already installed; `podman compose` verified with Postgres 16)
 - [x] Add `CLAUDE.md` with project conventions taken from the ADRs: `_cents` money, UTC times, raw SQL only in the `holds`/`inventory`/`payments` repositories, problem+json errors, zod in `packages/shared`
 
 ### Phase 0 — Foundation and walking skeleton
@@ -273,7 +274,7 @@ Record each phase's approved plan and final report here, or link to them. Use th
 
 | Phase | Plan | Report | Notes |
 |---|---|---|---|
-| 0 | | | |
+| 0 | [phase-0-plan.md](phases/phase-0-plan.md) | | |
 | 1 | | | |
 | 2 | | | |
 | 3a | | | |
@@ -291,6 +292,7 @@ Record changes to scope, order or acceptance criteria made after this plan was a
 |---|---|---|---|---|
 | 2026-10-26 | All | Plan created | — | Amarnath Vadla |
 | 2026-10-26 | P, 0 | Staging and production host set to Render | Owner's choice; recorded in ADR-0013 | Amarnath Vadla |
+| 2026-10-26 | P, 0 | Local containers run on Podman instead of Docker Desktop; the compose file stays engine-neutral and CI uses Docker | Podman already installed; no Docker Desktop licence needed | Amarnath Vadla |
 
 ---
 
