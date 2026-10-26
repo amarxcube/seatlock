@@ -90,7 +90,7 @@ flowchart TB
 | **Redis** | Socket.IO adapter (cross-instance fan-out), BullMQ queues, rate-limit counters. Holds no data that can't be lost. | Single managed instance |
 | **Stripe** | Card payments and refunds (test mode). | External |
 | **Email provider** | Delivers transactional email. Mailpit replaces it in development. | External |
-| **Object storage** | Event cover images. MinIO replaces it in development. | External |
+| **Object storage** | Event cover images. RustFS (S3-compatible) replaces it in development. | External |
 
 **Why the worker is a separate process:** slow or failing jobs (PDF rendering, email retries) can never add latency to booking requests, and the two can be scaled independently. It's still one codebase and one Docker image, started with a different entry point.
 
@@ -109,7 +109,7 @@ seatlock/
 │   ├── eslint-config/
 │   └── tsconfig/
 ├── docs/                       # this folder
-├── docker-compose.yml          # postgres, redis, mailpit, minio, stripe-cli
+├── docker-compose.yml          # postgres, redis, mailpit, rustfs, stripe-cli
 ├── turbo.json
 └── pnpm-workspace.yaml
 ```
@@ -343,7 +343,7 @@ service commits change ──▶ RealtimeService.broadcast(eventId, changes)
 
 | Environment | Purpose | Infrastructure |
 |---|---|---|
-| **Local** | Development | `docker compose up`: Postgres, Redis, Mailpit, MinIO, Stripe CLI (webhook forwarding) |
+| **Local** | Development | `docker compose up`: Postgres, Redis, Mailpit, RustFS (S3-compatible), Stripe CLI (webhook forwarding) |
 | **CI** | Every PR | GitHub Actions; Testcontainers for Postgres and Redis |
 | **Staging** | Auto-deploy from `main` | Render, defined in `render.yaml` ([ADR-0013](adr/0013-hosting-on-render.md)): static site (web), web service (api), background worker, Render Postgres, Render Key Value; Stripe test mode |
 | **Production** | Manual promotion of a tagged release | Same shape as staging |

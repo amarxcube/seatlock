@@ -20,7 +20,7 @@ This plan splits the build into phases. Each phase starts with a plan you approv
 | Phase | Name | PRD | Status | Plan approved | Review signed off | Tag |
 |---|---|---|---|---|---|---|
 | P | Prerequisites | — | Done | — | 2026-10-26 | — |
-| 0 | Foundation and walking skeleton | M0 | Planning | | | `phase-0` |
+| 0 | Foundation and walking skeleton | M0 | In progress | 2026-10-26 | | `phase-0` |
 | 1 | Auth and users | M1 | Not started | | | `phase-1` |
 | 2 | Venues, events, inventory | M2 (API), M3 | Not started | | | `phase-2` |
 | 3a | Holds: backend and concurrency | M4 | Not started | | | `phase-3a` |
@@ -43,7 +43,7 @@ Every phase follows the same four steps.
 3. **Automated checks (all must be green).**
    - Lint, type-check, unit tests
    - Integration tests against real Postgres and Redis (Testcontainers)
-   - OpenAPI contract diff (`oasdiff`) against [openapi.yaml](api/openapi.yaml)
+   - Contract tests: real responses validated against [openapi.yaml](api/openapi.yaml), no undocumented routes ([ADR-0014](adr/0014-contract-enforcement-by-response-validation.md))
    - Coverage thresholds; E2E tests where the phase has a user flow
    - `/code-review` on the diff; also `/security-review` for phases 1, 5 and 7
 4. **Review and sign-off.** A phase report is written from the [phase report template](#appendix-b-phase-report-template). You run the demo script locally or on staging and review the PR. Status: `In review`, then `Done` or `Changes requested`. On approval the PR merges to `main` and gets the phase tag.
@@ -75,26 +75,26 @@ Every phase follows the same four steps.
 ### Phase 0 — Foundation and walking skeleton
 
 **Scope**
-- [ ] pnpm workspaces and Turborepo: `apps/web`, `apps/api`, `packages/shared`, `packages/api-client`, `packages/eslint-config`, `packages/tsconfig` ([ADR-0002](adr/0002-monorepo-pnpm-turborepo.md))
-- [ ] `docker-compose.yml`: Postgres 16, Redis 7, Mailpit, MinIO, Stripe CLI
-- [ ] NestJS app with two entry points, `main.ts` (API) and `worker.ts` (worker) ([ADR-0003](adr/0003-nestjs-backend.md))
-- [ ] Prisma set up with an empty baseline migration
-- [ ] Config validated by zod at boot; the process exits on invalid config
-- [ ] pino JSON logging with `X-Request-Id`
-- [ ] Global problem+json exception filter and global `ZodValidationPipe`
-- [ ] `/health/live` and `/health/ready` (Postgres required; Redis reported only)
-- [ ] `/api/docs` serving the runtime spec; `api-client` generated from `openapi.yaml`
-- [ ] React + Vite + Tailwind + Router + TanStack Query shell, with design tokens from [wireframes §6](wireframes.md#6-design-tokens)
-- [ ] GitHub Actions: lint → type-check → test → build → Docker image (`turbo prune`)
-- [ ] Decide on branching before development starts: stay with feature → `main`, or add `develop` (feature → `develop` → `main` at phase sign-off, with staging deploying from `develop`). Until then, everything goes to `main` through PRs.
-- [ ] `render.yaml` Blueprint and staging deploy of web, api and worker, with Render Postgres and Key Value ([ADR-0013](adr/0013-hosting-on-render.md)); check whether session affinity is available
+- [x] pnpm workspaces and Turborepo: `apps/web`, `apps/api`, `packages/shared`, `packages/api-client`, `packages/eslint-config`, `packages/tsconfig` ([ADR-0002](adr/0002-monorepo-pnpm-turborepo.md))
+- [x] `docker-compose.yml`: Postgres 16, Redis 7, Mailpit, RustFS (replaces MinIO), Stripe CLI
+- [x] NestJS app with two entry points, `main.ts` (API) and `worker.ts` (worker) ([ADR-0003](adr/0003-nestjs-backend.md))
+- [x] Prisma set up with an empty baseline migration
+- [x] Config validated by zod at boot; the process exits on invalid config
+- [x] pino JSON logging with `X-Request-Id`
+- [x] Global problem+json exception filter and global `ZodValidationPipe`
+- [x] `/health/live` and `/health/ready` (Postgres required; Redis reported only)
+- [x] `/api/docs` serving the committed contract ([ADR-0014](adr/0014-contract-enforcement-by-response-validation.md)); `api-client` generated from `openapi.yaml`
+- [x] React + Vite + Tailwind + Router + TanStack Query shell, with design tokens from [wireframes §6](wireframes.md#6-design-tokens)
+- [ ] GitHub Actions: lint → type-check → test → build → Docker image (`turbo prune`) *(written; first run on the phase PR)*
+- [x] Decide on branching before development starts: **stay with feature → `main`** until a second contributor joins (owner, PR #3). Phase tags on `main` mark signed-off states.
+- [ ] `render.yaml` Blueprint *(written)* and staging deploy of web, api and worker, with Render Postgres and Key Value ([ADR-0013](adr/0013-hosting-on-render.md)); check whether session affinity is available
 
 **Acceptance criteria**
 - [ ] A fresh clone runs with `pnpm i && docker compose up && pnpm dev` and nothing else
 - [ ] `/health/ready` returns 200 locally and on staging; it returns 503 when Postgres is stopped
 - [ ] An unknown route returns a problem+json body containing `requestId`
 - [ ] The CI pipeline fails on a lint error, a type error or a failing test (demonstrated once)
-- [ ] The contract-diff step runs in CI
+- [ ] The contract tests run in CI
 
 ### Phase 1 — Auth and users
 
@@ -129,7 +129,7 @@ PRD §7.2, §7.3, stories C1, C2 (read-only), O1 (API), O2, O3
 - [ ] Organizer event CRUD, price tiers, publish → generates one `event_seats` row per seat and locks the layout
 - [ ] Public listing with filters (date in venue time zone, city, category) and pagination as in [api.md §4](api.md#4-pagination-filtering-sorting)
 - [ ] Seat map split into a cacheable layout and live statuses, with ETag ([api.md §7](api.md#7-caching))
-- [ ] Cover image upload through presigned URL (MinIO locally)
+- [ ] Cover image upload through presigned URL (RustFS locally)
 - [ ] Idempotent seed script: three venues including the 2,000-seat "Arena North", 12 events, every seat state ([database.md §8](database.md#8-seed-data-development-and-staging))
 - [ ] Web: event listing with filters (S1); event detail with a **read-only** SVG seat map (S2) that is keyboard focusable and has ARIA labels
 
@@ -293,6 +293,9 @@ Record changes to scope, order or acceptance criteria made after this plan was a
 | 2026-10-26 | All | Plan created | — | Amarnath Vadla |
 | 2026-10-26 | P, 0 | Staging and production host set to Render | Owner's choice; recorded in ADR-0013 | Amarnath Vadla |
 | 2026-10-26 | P, 0 | Local containers run on Podman instead of Docker Desktop; the compose file stays engine-neutral and CI uses Docker | Podman already installed; no Docker Desktop licence needed | Amarnath Vadla |
+| 2026-10-26 | 0 | Contract enforced by validating real responses and route coverage, not a generated spec plus `oasdiff` | `nestjs-zod` doesn't support NestJS 12; ADR-0014 | Amarnath Vadla |
+| 2026-10-26 | 0 | Local object storage is RustFS instead of MinIO | MinIO's image was removed from Docker Hub | — (dev-only; reported in phase report) |
+| 2026-10-26 | 0 | Podman machine switched to rootless; local Postgres published on port 5433 | Rootful Podman ports weren't reachable on Windows `localhost`; 5432 is taken by a host Postgres | Amarnath Vadla |
 
 ---
 

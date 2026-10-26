@@ -1,6 +1,6 @@
 # Phase 0 plan — Foundation and walking skeleton
 
-- **Status:** Draft, awaiting owner approval
+- **Status:** Approved 2026-10-26 (PR #3)
 - **Branch:** `phase/0-foundation`
 - **Delivery plan:** [Phase 0](../delivery-plan.md#phase-0--foundation-and-walking-skeleton)
 
