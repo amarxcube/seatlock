@@ -1,0 +1,89 @@
+# Local dependencies only. The API, worker and web app run on the host with `pnpm dev`.
+# Works with Docker Compose or `podman compose`. Values come from the repo-root .env.
+name: seatlock
+
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_USER: seatlock
+      POSTGRES_PASSWORD: seatlock
+      POSTGRES_DB: seatlock
+    ports: ['5433:5432'] # 5433 avoids clashing with a Postgres installed on the host
+    volumes: ['postgres-data:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U seatlock -d seatlock']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7.4.11-alpine
+    ports: ['6379:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Catches all outgoing email. Web UI: http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    ports: ['1025:1025', '8025:8025']
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # S3-compatible object storage for event cover images (replaces MinIO, whose image was
+  # withdrawn from Docker Hub). Console: http://localhost:9001
+  rustfs:
+    image: rustfs/rustfs:1.0.4
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-seatlock}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-seatlock-dev-secret}
+      RUSTFS_CONSOLE_ENABLE: 'true'
+    ports: ['9000:9000', '9001:9001']
+    volumes: ['rustfs-data:/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:9000/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Creates the cover-image bucket once storage is up; exits when done.
+  rustfs-init:
+    image: amazon/aws-cli:2.38.5
+    depends_on:
+      rustfs: { condition: service_healthy }
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-seatlock}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-seatlock-dev-secret}
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint: ['sh', '-c']
+    command:
+      - >-
+        aws --endpoint-url http://rustfs:9000 s3api head-bucket --bucket ${S3_BUCKET:-covers} 2>/dev/null
+        || aws --endpoint-url http://rustfs:9000 s3 mb s3://${S3_BUCKET:-covers}
+    restart: 'no'
+
+  # Forwards Stripe test-mode webhooks to the local API (ADR-0009).
+  # Optional: start with `docker compose --profile stripe up -d` once STRIPE_SECRET_KEY is in .env.
+  stripe-cli:
+    image: stripe/stripe-cli:v1.55.1
+    profiles: ['stripe']
+    extra_hosts: ['host.docker.internal:host-gateway']
+    command:
+      - listen
+      - --api-key
+      - ${STRIPE_SECRET_KEY:-}
+      - --events
+      - payment_intent.succeeded,payment_intent.payment_failed,payment_intent.canceled,charge.refunded
+      - --forward-to
+      - host.docker.internal:3000/api/v1/webhooks/stripe
+
+volumes:
+  postgres-data:
+  rustfs-data:
