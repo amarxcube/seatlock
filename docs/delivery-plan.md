@@ -19,7 +19,7 @@ This plan splits the build into phases. Each phase starts with a plan you approv
 
 | Phase | Name | PRD | Status | Plan approved | Review signed off | Tag |
 |---|---|---|---|---|---|---|
-| P | Prerequisites | — | Not started | — | — | — |
+| P | Prerequisites | — | In progress | — | — | — |
 | 0 | Foundation and walking skeleton | M0 | Not started | | | `phase-0` |
 | 1 | Auth and users | M1 | Not started | | | `phase-1` |
 | 2 | Venues, events, inventory | M2 (API), M3 | Not started | | | `phase-2` |
@@ -64,11 +64,11 @@ Every phase follows the same four steps.
 
 ### Phase P — Prerequisites
 
-- [ ] Initialise git in the project root and create the GitHub repository
-- [ ] Branch protection on `main`: PR required, CI required
+- [x] Initialise git in the project root and create the GitHub repository ([amarxcube/seatlock](https://github.com/amarxcube/seatlock), initial commit `df209f2`)
+- [x] Branch protection on `main`: PR required (applies to admins too), no force pushes or deletion, conversations must be resolved. *Required CI status checks are added in Phase 0 once the pipeline exists.*
 - [ ] Choose the staging host (Render, Railway or Fly.io) and create the account
 - [ ] Create a Stripe test-mode account; install the Stripe CLI
-- [ ] Add `CLAUDE.md` with project conventions taken from the ADRs: `_cents` money, UTC times, raw SQL only in the `holds`/`inventory`/`payments` repositories, problem+json errors, zod in `packages/shared`
+- [x] Add `CLAUDE.md` with project conventions taken from the ADRs: `_cents` money, UTC times, raw SQL only in the `holds`/`inventory`/`payments` repositories, problem+json errors, zod in `packages/shared`
 
 ### Phase 0 — Foundation and walking skeleton
 
