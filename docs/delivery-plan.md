@@ -85,16 +85,16 @@ Every phase follows the same four steps.
 - [x] `/health/live` and `/health/ready` (Postgres required; Redis reported only)
 - [x] `/api/docs` serving the committed contract ([ADR-0014](adr/0014-contract-enforcement-by-response-validation.md)); `api-client` generated from `openapi.yaml`
 - [x] React + Vite + Tailwind + Router + TanStack Query shell, with design tokens from [wireframes §6](wireframes.md#6-design-tokens)
-- [ ] GitHub Actions: lint → type-check → test → build → Docker image (`turbo prune`) *(written; first run on the phase PR)*
+- [x] GitHub Actions: lint → type-check → test → build → Docker image (`turbo prune`); required status checks on `main`
 - [x] Decide on branching before development starts: **stay with feature → `main`** until a second contributor joins (owner, PR #3). Phase tags on `main` mark signed-off states.
 - [ ] `render.yaml` Blueprint *(written)* and staging deploy of web, api and worker, with Render Postgres and Key Value ([ADR-0013](adr/0013-hosting-on-render.md)); check whether session affinity is available
 
 **Acceptance criteria**
 - [ ] A fresh clone runs with `pnpm i && docker compose up && pnpm dev` and nothing else
 - [ ] `/health/ready` returns 200 locally and on staging; it returns 503 when Postgres is stopped
-- [ ] An unknown route returns a problem+json body containing `requestId`
-- [ ] The CI pipeline fails on a lint error, a type error or a failing test (demonstrated once)
-- [ ] The contract tests run in CI
+- [x] An unknown route returns a problem+json body containing `requestId`
+- [x] The CI pipeline fails on a lint error, a type error or a failing test (demonstrated once: PR #5, run 40331166054)
+- [x] The contract tests run in CI
 
 ### Phase 1 — Auth and users
 
