@@ -1,6 +1,6 @@
 # ADR-0010: Design-first API with a committed OpenAPI contract
 
-- **Status:** Accepted
+- **Status:** Accepted. The CI contract check (runtime spec + `oasdiff`) is superseded by [ADR-0014](0014-contract-enforcement-by-response-validation.md).
 - **Date:** 2026-10-26
 
 ## Context

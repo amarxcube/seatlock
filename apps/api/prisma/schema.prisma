@@ -1,0 +1,14 @@
+// Models arrive phase by phase; see docs/database.md for the full design.
+// Hand-written SQL (CHECK constraints, partial indexes, triggers) lives in the
+// migration files, marked `-- manual:` (docs/database.md §7).
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}

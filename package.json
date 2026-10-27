@@ -1,0 +1,29 @@
+{
+  "name": "seatlock",
+  "private": true,
+  "description": "Event booking platform with assigned seating",
+  "type": "module",
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "volta": {
+    "node": "24.22.1",
+    "pnpm": "10.34.9"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
+    "generate": "turbo run generate",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "3.9.10",
+    "turbo": "2.11.10"
+  }
+}
